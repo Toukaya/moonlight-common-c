@@ -3,13 +3,15 @@
 
 #define MIC_IV_LEN 16
 #define MIC_HEADER_FLAGS 0x00
-#define MIC_DEFAULT_FRAME_DURATION_SAMPLES 960
 
 static SOCKET micSocket = INVALID_SOCKET;
 static PPLT_CRYPTO_CONTEXT micEncryptionCtx = NULL;
 static uint32_t micRiKeyId = 0;
 static uint16_t micSequenceNumber = 0;
 static uint32_t micTimestamp = 0;
+
+MIC_PCM_CONFIG_INTERNAL NegotiatedMicConfig;
+bool NegotiatedMicConfigValid = false;
 
 #pragma pack(push, 1)
 typedef struct _MICROPHONE_PACKET_HEADER {
@@ -60,31 +62,28 @@ void destroyMicrophoneStream(void) {
     micRiKeyId = 0;
     micSequenceNumber = 0;
     micTimestamp = 0;
+    NegotiatedMicConfigValid = false;
 }
 
-int LiSendMicrophoneOpusData(const unsigned char* opusData, int opusLength) {
-    return LiSendMicrophoneOpusDataEx(opusData, opusLength, MIC_DEFAULT_FRAME_DURATION_SAMPLES);
-}
-
-int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, uint32_t frameDurationSamples) {
+int LiSendMicrophonePcmData(const void* pcmData, int payloadBytes, uint32_t frameDurationSamples) {
     LC_SOCKADDR saddr;
     MICROPHONE_PACKET_HEADER header;
     unsigned char packet[MAX_MIC_PACKET_SIZE];
     int packetLength;
     int err;
 
-    if (micSocket == INVALID_SOCKET || opusData == NULL || opusLength <= 0) {
+    if (micSocket == INVALID_SOCKET || pcmData == NULL || payloadBytes <= 0) {
         return -1;
     }
 
-    if (opusLength > MAX_MIC_PACKET_SIZE - (int)sizeof(header)) {
-        Limelog("MIC: Input data too large (%d)\n", opusLength);
+    if (payloadBytes > MAX_MIC_PACKET_SIZE - (int)sizeof(header)) {
+        Limelog("MIC: Input data too large (%d)\n", payloadBytes);
         return -1;
     }
 
     memset(&header, 0, sizeof(header));
     header.flags = MIC_HEADER_FLAGS;
-    header.packetType = MIC_PACKET_TYPE_OPUS;
+    header.packetType = MIC_PACKET_TYPE_PCM;
     header.sequenceNumber = LE16(micSequenceNumber);
     header.timestamp = LE32(micTimestamp);
     header.ssrc = LE32(MIC_PACKET_MAGIC);
@@ -104,7 +103,7 @@ int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, ui
                                sizeof(StreamConfig.remoteInputAesKey),
                                iv, sizeof(iv),
                                NULL, 0,
-                               (unsigned char*)opusData, opusLength,
+                               (unsigned char*)pcmData, payloadBytes,
                                encryptedData, &encryptedLength)) {
             Limelog("MIC: Encryption failed\n");
             return -1;
@@ -120,18 +119,18 @@ int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, ui
         memcpy(packet + sizeof(header), encryptedData, encryptedLength);
     }
     else {
-        packetLength = (int)sizeof(header) + opusLength;
+        packetLength = (int)sizeof(header) + payloadBytes;
         if (packetLength > MAX_MIC_PACKET_SIZE || packetLength > (int)sizeof(packet)) {
             Limelog("MIC: Packet too large (%d > %d)\n", packetLength, MAX_MIC_PACKET_SIZE);
             return -1;
         }
 
         memcpy(packet, &header, sizeof(header));
-        memcpy(packet + sizeof(header), opusData, opusLength);
+        memcpy(packet + sizeof(header), pcmData, payloadBytes);
     }
 
     ++micSequenceNumber;
-    micTimestamp += frameDurationSamples != 0 ? frameDurationSamples : MIC_DEFAULT_FRAME_DURATION_SAMPLES;
+    micTimestamp += frameDurationSamples;
 
     memcpy(&saddr, &RemoteAddr, sizeof(saddr));
     SET_PORT(&saddr, MicPortNumber);
@@ -142,6 +141,33 @@ int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, ui
     }
 
     return err;
+}
+
+int LiGetNegotiatedMicConfig(LI_MIC_CONFIG* outConfig) {
+    if (!NegotiatedMicConfigValid || outConfig == NULL) {
+        return -1;
+    }
+
+    outConfig->sampleRate = NegotiatedMicConfig.sampleRate;
+    outConfig->channels = NegotiatedMicConfig.channels;
+    outConfig->bitsPerSample = NegotiatedMicConfig.bitsPerSample;
+    outConfig->sampleFormatId = NegotiatedMicConfig.sampleFormatId;
+    outConfig->frameDurationMs = NegotiatedMicConfig.frameDurationMs;
+    return 0;
+}
+
+void LiSetNegotiatedMicConfig(const LI_MIC_CONFIG* config) {
+    if (config == NULL) {
+        NegotiatedMicConfigValid = false;
+        return;
+    }
+
+    NegotiatedMicConfig.sampleRate = config->sampleRate;
+    NegotiatedMicConfig.channels = config->channels;
+    NegotiatedMicConfig.bitsPerSample = config->bitsPerSample;
+    NegotiatedMicConfig.sampleFormatId = config->sampleFormatId;
+    NegotiatedMicConfig.frameDurationMs = config->frameDurationMs;
+    NegotiatedMicConfigValid = true;
 }
 
 bool LiIsMicrophoneEncryptionEnabled(void) {

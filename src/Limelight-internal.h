@@ -57,8 +57,18 @@ extern uint32_t EncryptionFeaturesRequested;
 extern uint32_t EncryptionFeaturesEnabled;
 
 #define MIC_PACKET_MAGIC 0x12345678
-#define MIC_PACKET_TYPE_OPUS 0x61
+#define MIC_PACKET_TYPE_PCM 0x61
 #define MAX_MIC_PACKET_SIZE 1400
+
+typedef struct _MIC_PCM_CONFIG_INTERNAL {
+    int sampleRate;
+    int channels;
+    int bitsPerSample;
+    int sampleFormatId; // matches LI_MIC_FMT_*
+    int frameDurationMs;
+} MIC_PCM_CONFIG_INTERNAL;
+extern MIC_PCM_CONFIG_INTERNAL NegotiatedMicConfig;
+extern bool NegotiatedMicConfigValid;
 
 // ENet channel ID values
 #define CTRL_CHANNEL_GENERIC      0x00
@@ -161,7 +171,5 @@ int stopInputStream(void);
 
 int initializeMicrophoneStream(void);
 void destroyMicrophoneStream(void);
-int LiSendMicrophoneOpusData(const unsigned char* opusData, int opusLength);
-int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, uint32_t frameDurationSamples);
 bool LiIsMicrophoneEncryptionEnabled(void);
 bool LiIsMicrophoneStreamActive(void);

@@ -876,6 +876,79 @@ static bool parseUrlAddrFromRtspUrlString(const char* rtspUrlString, char* desti
 
 // SDP attributes are in the form:
 // a=x-nv-bwe.bwuSafeZoneLowLimit:70\r\n
+// Parses a key=value pair from a semicolon-delimited fmtp parameter string.
+// Returns the integer value for 'key', or defaultVal if not found.
+static int parseFmtpIntParam(const char* fmtpLine, const char* key, int defaultVal) {
+    if (fmtpLine == NULL || key == NULL) {
+        return defaultVal;
+    }
+
+    const char* pos = fmtpLine;
+    size_t keyLen = strlen(key);
+    while ((pos = strstr(pos, key)) != NULL) {
+        if (pos[keyLen] == '=') {
+            return (int)strtol(pos + keyLen + 1, NULL, 10);
+        }
+        pos++;
+    }
+    return defaultVal;
+}
+
+// Parses the 'x-ml-mic.transport' field from a fmtp line.
+// Returns true if the value is exactly "pcm".
+static bool parseFmtpTransportIsPcm(const char* fmtpLine) {
+    if (fmtpLine == NULL) {
+        return false;
+    }
+    const char* pos = strstr(fmtpLine, "x-ml-mic.transport=");
+    if (pos == NULL) {
+        return false;
+    }
+    pos += strlen("x-ml-mic.transport=");
+    return strncmp(pos, "pcm", 3) == 0 && (pos[3] == ';' || pos[3] == '\r' || pos[3] == '\n' || pos[3] == '\0');
+}
+
+// Parses the 'x-ml-mic.sampleFormat' string field from a fmtp line into a LI_MIC_FMT_* id.
+static int parseFmtpSampleFormatId(const char* fmtpLine) {
+    if (fmtpLine == NULL) {
+        return LI_MIC_FMT_S16LE;
+    }
+    const char* pos = strstr(fmtpLine, "x-ml-mic.sampleFormat=");
+    if (pos == NULL) {
+        return LI_MIC_FMT_S16LE;
+    }
+    pos += strlen("x-ml-mic.sampleFormat=");
+    if (strncmp(pos, "f32le", 5) == 0) {
+        return LI_MIC_FMT_F32LE;
+    } else if (strncmp(pos, "s32le", 5) == 0) {
+        return LI_MIC_FMT_S32LE;
+    } else if (strncmp(pos, "s24le", 5) == 0) {
+        return LI_MIC_FMT_S24LE;
+    }
+    return LI_MIC_FMT_S16LE;
+}
+
+// Parses the PCM mic fmtp line from the RTSP DESCRIBE payload.
+// Looks for "a=fmtp:97 x-ml-mic.*" and populates outConfig.
+// Returns true on success, false if the required attributes are absent.
+static bool parsePcmMicConfig(const char* payload, LI_MIC_CONFIG* outConfig) {
+    const char* fmtpLine = strstr(payload, "a=fmtp:97 x-ml-mic.");
+    if (fmtpLine == NULL) {
+        return false;
+    }
+
+    if (!parseFmtpTransportIsPcm(fmtpLine)) {
+        return false;
+    }
+
+    outConfig->sampleRate    = parseFmtpIntParam(fmtpLine, "x-ml-mic.sampleRate",     48000);
+    outConfig->channels      = parseFmtpIntParam(fmtpLine, "x-ml-mic.channels",        1);
+    outConfig->bitsPerSample = parseFmtpIntParam(fmtpLine, "x-ml-mic.bitsPerSample",  16);
+    outConfig->sampleFormatId = parseFmtpSampleFormatId(fmtpLine);
+    outConfig->frameDurationMs = parseFmtpIntParam(fmtpLine, "x-ml-mic.frameDurationMs", 10);
+    return true;
+}
+
 bool parseSdpAttributeToUInt(const char* payload, const char* name, unsigned int* val) {
     // Find the entry for the specified attribute name
     char* attribute = strstr(payload, name);
@@ -1132,10 +1205,29 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         }
         EncryptionFeaturesEnabled = 0;
 
-        hostSupportsMic = strstr(response.payload, "a=rtpmap:96 opus/48000/1") != NULL ||
-                          strstr(response.payload, "a=rtpmap:96 opus/48000/2") != NULL;
-        if (StreamConfig.enableMic && !hostSupportsMic) {
-            Limelog("Host does not advertise negotiated microphone support; continuing without microphone passthrough\n");
+        // Detect PCM mic: payload type 97 with x-ml-mic fmtp attributes.
+        // Old Opus hosts emit rtpmap:96 and are not supported by this client build.
+        {
+            LI_MIC_CONFIG parsedMicConfig;
+            memset(&parsedMicConfig, 0, sizeof(parsedMicConfig));
+            bool hasPcmMic = strstr(response.payload, "a=rtpmap:97") != NULL &&
+                             parsePcmMicConfig(response.payload, &parsedMicConfig);
+            if (StreamConfig.enableMic) {
+                if (hasPcmMic) {
+                    LiSetNegotiatedMicConfig(&parsedMicConfig);
+                    hostSupportsMic = true;
+                    Limelog("Host advertised PCM mic: %dHz/%dch/%dbit fmt=%d dur=%dms\n",
+                            parsedMicConfig.sampleRate, parsedMicConfig.channels,
+                            parsedMicConfig.bitsPerSample, parsedMicConfig.sampleFormatId,
+                            parsedMicConfig.frameDurationMs);
+                } else {
+                    LiSetNegotiatedMicConfig(NULL);
+                    hostSupportsMic = false;
+                    Limelog("Host did not advertise PCM mic format; mic disabled\n");
+                }
+            } else {
+                LiSetNegotiatedMicConfig(NULL);
+            }
         }
 
         // Parse the Opus surround parameters out of the RTSP DESCRIBE response.
