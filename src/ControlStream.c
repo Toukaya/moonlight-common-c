@@ -139,7 +139,10 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_RUMBLE_TRIGGER_DATA 9
 #define IDX_SET_MOTION_EVENT 10
 #define IDX_SET_RGB_LED 11
-#define IDX_DS_ADAPTIVE_TRIGGERS 12
+#define IDX_EXEC_SERVER_CMD 12
+#define IDX_SET_CLIPBOARD 13
+#define IDX_FILE_TRANSFER_NONCE_REQUEST 14
+#define IDX_DS_ADAPTIVE_TRIGGERS 15
 
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
@@ -157,6 +160,10 @@ static const short packetTypesGen3[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Execute Server Command (unused)
+    -1,     // Set Clipboard (unused)
+    -1,     // File transfer nonce request (unused)
+    -1,     // Set Adaptive Triggers (unused)
 };
 static const short packetTypesGen4[] = {
     0x0606, // Request IDR frame
@@ -171,6 +178,10 @@ static const short packetTypesGen4[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Execute Server Command (unused)
+    -1,     // Set Clipboard (unused)
+    -1,     // File transfer nonce request (unused)
+    -1,     // Set Adaptive Triggers (unused)
 };
 static const short packetTypesGen5[] = {
     0x0305, // Start A
@@ -185,6 +196,10 @@ static const short packetTypesGen5[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Execute Server Command (unused)
+    -1,     // Set Clipboard (unused)
+    -1,     // File transfer nonce request (unused)
+    -1,     // Set Adaptive Triggers (unused)
 };
 static const short packetTypesGen7[] = {
     0x0305, // Start A
@@ -199,6 +214,10 @@ static const short packetTypesGen7[] = {
     -1,     // Rumble triggers (unused)
     -1,     // Set motion event (unused)
     -1,     // Set RGB LED (unused)
+    -1,     // Execute Server Command (unused)
+    -1,     // Set Clipboard (unused)
+    -1,     // File transfer nonce request (unused)
+    -1,     // Set Adaptive Triggers (unused)
 };
 static const short packetTypesGen7Enc[] = {
     0x0302, // Request IDR frame
@@ -213,6 +232,9 @@ static const short packetTypesGen7Enc[] = {
     0x5500, // Rumble triggers (Sunshine protocol extension)
     0x5501, // Set motion event (Sunshine protocol extension)
     0x5502, // Set RGB LED (Sunshine protocol extension)
+    0x3000, // Execute Server Command (Apollo protocol extension)
+    0x3001, // Set Clipboard (Apollo protocol extension)
+    0x3002, // File transfer nonce request (Apollo protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
 };
 
@@ -1026,6 +1048,8 @@ static bool needsAsyncCallback(unsigned short packetType) {
            packetType == packetTypes[IDX_SET_MOTION_EVENT] ||
            packetType == packetTypes[IDX_SET_RGB_LED] ||
            packetType == packetTypes[IDX_HDR_INFO] ||
+           packetType == packetTypes[IDX_SET_CLIPBOARD] ||
+           packetType == packetTypes[IDX_FILE_TRANSFER_NONCE_REQUEST] ||
            packetType == packetTypes[IDX_DS_ADAPTIVE_TRIGGERS];
 }
 
@@ -2083,4 +2107,30 @@ bool LiGetHdrMetadata(PSS_HDR_METADATA metadata) {
 
     *metadata = hdrMetadata;
     return true;
+}
+
+// Send a server cmd request to the streaming machine
+int LiSendExecServerCmd(uint8_t cmdId) {
+    uint8_t payload[4] = {cmdId, 0, 0, 0};
+    return sendMessageAndForget(
+        packetTypes[IDX_EXEC_SERVER_CMD],
+        sizeof(payload),
+        payload,
+        CTRL_CHANNEL_SERVERCTL,
+        ENET_PACKET_FLAG_RELIABLE,
+        false
+    );
+}
+
+// Send a server cmd request to the streaming machine
+int LiSendEmptyPayload() {
+    uint8_t payload[4] = {0xAA, 0x55, 0xAA, 0x55};
+    return sendMessageAndForget(
+        0x00,
+        sizeof(payload),
+        payload,
+        CTRL_CHANNEL_SERVERCTL,
+        ENET_PACKET_FLAG_RELIABLE,
+        false
+    );
 }
