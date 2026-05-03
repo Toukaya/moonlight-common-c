@@ -564,13 +564,31 @@ void LiInterruptConnection(void);
 // from the integer passed to the ConnListenerStageXXX callbacks
 const char* LiGetStageName(int stage);
 
-// Sends a single Opus-encoded microphone packet to the host using the default
-// 20 ms / 48 kHz packet duration.
-int LiSendMicrophoneOpusData(const unsigned char* opusData, int opusLength);
+// PCM sample format identifiers for use with LI_MIC_CONFIG.sampleFormatId
+#define LI_MIC_FMT_S16LE 0
+#define LI_MIC_FMT_S24LE 1
+#define LI_MIC_FMT_S32LE 2
+#define LI_MIC_FMT_F32LE 3
 
-// Sends a single Opus-encoded microphone packet to the host with an explicit
-// frame duration in 48 kHz samples.
-int LiSendMicrophoneOpusDataEx(const unsigned char* opusData, int opusLength, uint32_t frameDurationSamples);
+typedef struct _LI_MIC_CONFIG {
+    int sampleRate;
+    int channels;
+    int bitsPerSample;
+    int sampleFormatId;
+    int frameDurationMs;
+} LI_MIC_CONFIG;
+
+// Sends a single raw PCM microphone frame to the host.
+// pcmData/payloadBytes: caller-supplied raw little-endian PCM.
+// frameDurationSamples: samples-per-channel (drives the timestamp clock).
+int LiSendMicrophonePcmData(const void* pcmData, int payloadBytes, uint32_t frameDurationSamples);
+
+// Populates outConfig with the mic format negotiated via SDP.
+// Returns 0 on success, -1 if the host has not advertised a PCM mic config.
+int LiGetNegotiatedMicConfig(LI_MIC_CONFIG* outConfig);
+
+// Called by the RTSP layer after parsing the host's SDP DESCRIBE response.
+void LiSetNegotiatedMicConfig(const LI_MIC_CONFIG* config);
 
 // Indicates whether microphone packets are currently encrypted.
 bool LiIsMicrophoneEncryptionEnabled(void);
