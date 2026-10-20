@@ -479,16 +479,19 @@ int LiSeamlessHandleMessage(const uint8_t *payload, int length) {
     }
 }
 
-int LiSendWindowSnapshot(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
-                         int16_t workAreaX, int16_t workAreaY,
-                         uint16_t workAreaW, uint16_t workAreaH,
-                         const LiSeamlessWindowEntry *entries, int count) {
-    uint8_t buffer[SEAMLESS_SNAPSHOT_HEADER_SIZE + (SEAMLESS_MAX_WINDOWS * SEAMLESS_ENTRY_SIZE)];
+int LiEncodeWindowSnapshot(uint8_t *buffer, int capacity,
+                           uint8_t seq, uint16_t canvasW, uint16_t canvasH,
+                           int16_t workAreaX, int16_t workAreaY,
+                           uint16_t workAreaW, uint16_t workAreaH,
+                           const LiSeamlessWindowEntry *entries, int count) {
     uint8_t *p = buffer;
     int i;
     uint32_t crc;
     int length;
 
+    if (buffer == NULL || entries == NULL) {
+        return -1;
+    }
     if (count < 0 || count > SEAMLESS_MAX_WINDOWS) {
         return -1;
     }
@@ -502,6 +505,10 @@ int LiSendWindowSnapshot(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
     }
 
     length = SEAMLESS_SNAPSHOT_HEADER_SIZE + (count * SEAMLESS_ENTRY_SIZE);
+    if (capacity < length) {
+        return -1;
+    }
+
     p = wr8(p, SEAMLESS_MSG_WINDOW_SNAPSHOT);
     p = wr8(p, seq);
     p = wr8(p, (uint8_t)count);
@@ -522,23 +529,44 @@ int LiSendWindowSnapshot(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
     buffer[9] = (uint8_t)((crc >> 16) & 0xFF);
     buffer[10] = (uint8_t)((crc >> 24) & 0xFF);
 
+    return length;
+}
+
+int LiSendWindowSnapshot(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
+                         int16_t workAreaX, int16_t workAreaY,
+                         uint16_t workAreaW, uint16_t workAreaH,
+                         const LiSeamlessWindowEntry *entries, int count) {
+    uint8_t buffer[SEAMLESS_SNAPSHOT_HEADER_SIZE + (SEAMLESS_MAX_WINDOWS * SEAMLESS_ENTRY_SIZE)];
+    int length = LiEncodeWindowSnapshot(buffer, (int)sizeof(buffer), seq, canvasW, canvasH,
+                                        workAreaX, workAreaY, workAreaW, workAreaH,
+                                        entries, count);
+    if (length < 0) {
+        return -1;
+    }
     return sendOnSeamlessChannel(buffer, length);
 }
 
-int LiSendWindowDelta(uint8_t seq, uint8_t mask,
-                      int16_t workAreaX, int16_t workAreaY,
-                      uint16_t workAreaW, uint16_t workAreaH,
-                      const LiSeamlessWindowEntry *entries, int count) {
-    uint8_t buffer[SEAMLESS_DELTA_HEADER_SIZE + (SEAMLESS_MAX_WINDOWS * SEAMLESS_ENTRY_SIZE)];
+int LiEncodeWindowDelta(uint8_t *buffer, int capacity,
+                        uint8_t seq, uint8_t mask,
+                        int16_t workAreaX, int16_t workAreaY,
+                        uint16_t workAreaW, uint16_t workAreaH,
+                        const LiSeamlessWindowEntry *entries, int count) {
     uint8_t *p = buffer;
     int i;
     int length;
 
+    if (buffer == NULL || (entries == NULL && count > 0)) {
+        return -1;
+    }
     if (count < 0 || count > SEAMLESS_MAX_WINDOWS) {
         return -1;
     }
 
     length = SEAMLESS_DELTA_HEADER_SIZE + (count * SEAMLESS_ENTRY_SIZE);
+    if (capacity < length) {
+        return -1;
+    }
+
     p = wr8(p, SEAMLESS_MSG_WINDOW_DELTA);
     p = wr8(p, seq);
     p = wr8(p, mask);
@@ -551,6 +579,20 @@ int LiSendWindowDelta(uint8_t seq, uint8_t mask,
         p = wrEntry(p, &entries[i]);
     }
 
+    return length;
+}
+
+int LiSendWindowDelta(uint8_t seq, uint8_t mask,
+                      int16_t workAreaX, int16_t workAreaY,
+                      uint16_t workAreaW, uint16_t workAreaH,
+                      const LiSeamlessWindowEntry *entries, int count) {
+    uint8_t buffer[SEAMLESS_DELTA_HEADER_SIZE + (SEAMLESS_MAX_WINDOWS * SEAMLESS_ENTRY_SIZE)];
+    int length = LiEncodeWindowDelta(buffer, (int)sizeof(buffer), seq, mask,
+                                     workAreaX, workAreaY, workAreaW, workAreaH,
+                                     entries, count);
+    if (length < 0) {
+        return -1;
+    }
     return sendOnSeamlessChannel(buffer, length);
 }
 

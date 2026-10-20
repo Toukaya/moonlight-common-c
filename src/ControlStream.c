@@ -149,7 +149,7 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 // have: a table shorter than the space turns a table read into an out-of-bounds
 // read, and the bytes after the table become a wire type. Adding an index means
 // raising IDX_MAX_USED, which then fails the per-table checks until every table
-// is extended.
+// is extended. Every packetTypes table is checked below.
 #define IDX_MAX_USED IDX_DS_ADAPTIVE_TRIGGERS
 #define IDX_COUNT (IDX_MAX_USED + 1)
 
@@ -247,7 +247,7 @@ static const short packetTypesGen7Enc[] = {
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
 };
 
-// Every table holds exactly the index space. A short table would make a table
+// Every packetTypes table holds exactly the index space. A short table would make a table
 // read run past the end, and the bytes after the table would become the wire
 // type: this is the class that a 17th entry in one table only produced. The
 // check is on every table, so a new index cannot be half-added.

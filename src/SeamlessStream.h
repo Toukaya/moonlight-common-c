@@ -227,6 +227,20 @@ int LiSendWindowIntent(uint8_t windowId, uint8_t kind, int16_t x, int16_t y,
 int LiSendPresent(uint32_t frameId, uint32_t presentUs);
 int LiSendSkip(uint32_t frameId, uint8_t reason);
 
+// Host to client, encode only: fills caller storage and returns the length, so a
+// host that owns its own transport can send the same bytes the senders below
+// would send. No wire byte differs between these and the senders.
+int LiEncodeWindowSnapshot(uint8_t *buffer, int capacity,
+                           uint8_t seq, uint16_t canvasW, uint16_t canvasH,
+                           int16_t workAreaX, int16_t workAreaY,
+                           uint16_t workAreaW, uint16_t workAreaH,
+                           const LiSeamlessWindowEntry *entries, int count);
+int LiEncodeWindowDelta(uint8_t *buffer, int capacity,
+                        uint8_t seq, uint8_t mask,
+                        int16_t workAreaX, int16_t workAreaY,
+                        uint16_t workAreaW, uint16_t workAreaH,
+                        const LiSeamlessWindowEntry *entries, int count);
+
 // Host to client.
 int LiSendWindowSnapshot(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
                          int16_t workAreaX, int16_t workAreaY,
