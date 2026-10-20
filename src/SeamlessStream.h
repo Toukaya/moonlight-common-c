@@ -41,13 +41,15 @@
  *              u16 workAreaH
  *              WindowEntry entries[count]
  *
- *          Entry, always 32 bytes, the layout is checked at compile time:
+ *          Entry, always 32 bytes on the wire, the width is checked at compile
+ *          time against the sum of the field widths:
  *              u32 id
  *              u16 cellX, cellY, cellW, cellH
  *              u16 clientW, clientH
  *              i16 desktopX, desktopY
  *              u8  z
  *              u8  flags
+ *              u8  reserved[2]     written as zero, ignored on receive
  *              u32 titleHash
  *              u32 iconHash
  */
@@ -89,6 +91,7 @@ extern "C" {
 // Exact message sizes in bytes, all of them fixed.
 #define SEAMLESS_SNAPSHOT_HEADER_SIZE  19
 #define SEAMLESS_DELTA_HEADER_SIZE     13
+#define SEAMLESS_ENTRY_RESERVED        2
 #define SEAMLESS_ENTRY_SIZE            32
 #define SEAMLESS_ICON_HEADER_SIZE      7
 #define SEAMLESS_CARET_SIZE            8
@@ -160,8 +163,12 @@ typedef struct _LiSeamlessWindowEntry {
     uint32_t iconHash;
 } LiSeamlessWindowEntry;
 
-// The entry never grows: the wire format depends on this size.
-typedef char LiSeamlessEntrySizeCheck[(sizeof(LiSeamlessWindowEntry) == SEAMLESS_ENTRY_SIZE) ? 1 : -1];
+// The entry never grows: the wire format depends on this size. The check sums
+// the field widths written by the encoder, so a struct whose compiler padding
+// happens to match cannot hide a wire that does not.
+#define SEAMLESS_ENTRY_WIRE_SIZE (4 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 2 + 1 + 1 + SEAMLESS_ENTRY_RESERVED + 4 + 4)
+typedef char LiSeamlessEntrySizeCheck[(SEAMLESS_ENTRY_WIRE_SIZE == SEAMLESS_ENTRY_SIZE) ? 1 : -1];
+typedef char LiSeamlessEntryNoTailPadding[(SEAMLESS_ENTRY_SIZE >= (int)sizeof(LiSeamlessWindowEntry)) ? 1 : -1];
 typedef char LiSeamlessSnapshotHeaderCheck[(SEAMLESS_SNAPSHOT_HEADER_SIZE == 19) ? 1 : -1];
 typedef char LiSeamlessIntentSizeCheck[(SEAMLESS_INTENT_SIZE == 11) ? 1 : -1];
 
@@ -197,6 +204,11 @@ typedef struct _LiSeamlessCallbacks {
 
 // Negotiated flag. Nothing is sent and nothing is parsed while this is 0.
 void LiSetSeamlessEnabled(int enabled);
+// Applies a host description to the flag: the client asked (requested != 0) and
+// the description carries x-ss-general.seamless with a value other than 0.
+// Returns 1 when the channel is enabled, 0 when it is not. This is the whole
+// client side decision, so it can be exercised without a live session.
+int LiSeamlessEvaluateHostAnswer(int requested, const char* description);
 int LiIsSeamlessEnabled(void);
 void LiSetSeamlessCallbacks(const LiSeamlessCallbacks *callbacks, void *context);
 

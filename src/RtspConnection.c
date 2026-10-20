@@ -1230,21 +1230,10 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
             EncryptionFeaturesRequested = 0;
         }
 
-        // The seamless window channel opens only when the host names it in its
-        // answer. Nothing is sent or parsed on that channel before this point.
-        if (StreamConfig.enableSeamless) {
-            uint32_t seamlessAnswer = 0;
-            if (parseSdpAttributeToUInt(response.payload, "x-ss-general.seamless", &seamlessAnswer) && seamlessAnswer != 0) {
-                LiSetSeamlessEnabled(1);
-            }
-            else {
-                LiSetSeamlessEnabled(0);
-                Limelog("Host did not answer the seamless window capability\n");
-            }
-        }
-        else {
-            LiSetSeamlessEnabled(0);
-        }
+        // The seamless window channel opens only when the client asked for it
+        // and the host named it in its answer. The decision lives in one place
+        // so it can be exercised without a live session.
+        LiSeamlessEvaluateHostAnswer(StreamConfig.enableSeamless, response.payload);
         EncryptionFeaturesEnabled = 0;
 
         // Detect PCM mic: payload type 97 with x-ml-mic fmtp attributes.

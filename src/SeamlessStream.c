@@ -9,6 +9,7 @@
 #include "Limelight-internal.h"
 #include "SeamlessStream.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static LiSeamlessCallbacks seamlessCallbacks;
@@ -22,6 +23,52 @@ void LiSetSeamlessEnabled(int enabled) {
 
 int LiIsSeamlessEnabled(void) {
     return seamlessEnabled ? 1 : 0;
+}
+
+// Reads a decimal attribute value out of a session description written in the
+// "a=name:value" form. Returns 1 when the attribute is present and parses.
+static int read_sdp_attribute(const char* description, const char* name, uint32_t* value) {
+    const char* found;
+    char* end = NULL;
+    unsigned long parsed;
+
+    if (description == NULL || name == NULL || value == NULL) {
+        return 0;
+    }
+    found = strstr(description, name);
+    if (found == NULL) {
+        return 0;
+    }
+    found += strlen(name);
+    if (*found != ':') {
+        return 0;
+    }
+    found++;
+    while (*found == ' ' || *found == '\t') {
+        found++;
+    }
+    parsed = strtoul(found, &end, 10);
+    if (end == found) {
+        return 0;
+    }
+    *value = (uint32_t)parsed;
+    return 1;
+}
+
+int LiSeamlessEvaluateHostAnswer(int requested, const char* description) {
+    uint32_t answer = 0;
+
+    if (!requested) {
+        LiSetSeamlessEnabled(0);
+        return 0;
+    }
+    if (!read_sdp_attribute(description, "x-ss-general.seamless", &answer) || answer == 0) {
+        LiSetSeamlessEnabled(0);
+        Limelog("Host did not answer the seamless window capability\n");
+        return 0;
+    }
+    LiSetSeamlessEnabled(1);
+    return 1;
 }
 
 void LiSetSeamlessCallbacks(const LiSeamlessCallbacks *callbacks, void *context) {
@@ -67,6 +114,11 @@ static uint8_t *wrEntry(uint8_t *p, const LiSeamlessWindowEntry *e) {
     p = wr16(p, (uint16_t)e->desktopY);
     p = wr8(p, e->z);
     p = wr8(p, e->flags);
+    // Two reserved bytes, always written as zero. They are what makes the wire
+    // entry 32 bytes wide in the same shape as the in-memory entry, so the
+    // stride of the wire and the stride of the struct cannot disagree.
+    p = wr8(p, 0);
+    p = wr8(p, 0);
     p = wr32(p, e->titleHash);
     p = wr32(p, e->iconHash);
     return p;
@@ -106,6 +158,8 @@ static void rdEntry(const uint8_t **pp, LiSeamlessWindowEntry *e) {
     e->desktopY = (int16_t)rd16(pp);
     e->z = rd8(pp);
     e->flags = rd8(pp);
+    rd8(pp);  // reserved, ignored on receive
+    rd8(pp);
     e->titleHash = rd32(pp);
     e->iconHash = rd32(pp);
 }
