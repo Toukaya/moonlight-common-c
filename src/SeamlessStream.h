@@ -130,6 +130,14 @@ extern "C" {
 #define SEAMLESS_ACK_REJECTED          1
 #define SEAMLESS_ACK_OVER_LIMIT        2
 
+// Table versions, as the table callback receives them. A snapshot carries the
+// whole set and replaces whatever the receiver holds; a delta carries only the
+// entries that changed and must be merged into the held set. A receiver that
+// cannot tell the two apart cannot apply a delta at all, so the kind is part of
+// the callback and not something the receiver infers from the count.
+#define SEAMLESS_TABLE_SNAPSHOT        0
+#define SEAMLESS_TABLE_DELTA           1
+
 // Skip reasons.
 #define SEAMLESS_SKIP_LATE             0
 #define SEAMLESS_SKIP_DECODE_ERROR     1
@@ -173,8 +181,11 @@ typedef char LiSeamlessSnapshotHeaderCheck[(SEAMLESS_SNAPSHOT_HEADER_SIZE == 19)
 typedef char LiSeamlessIntentSizeCheck[(SEAMLESS_INTENT_SIZE == 11) ? 1 : -1];
 
 // Receivers. Each one is called only after the message passed its size,
-// limit and checksum checks.
-typedef void (*LiSeamlessTableCallback)(uint8_t seq, uint16_t canvasW, uint16_t canvasH,
+// limit and checksum checks. The table callback carries the kind of the
+// version, because a snapshot replaces the receiver's set and a delta is
+// merged into it.
+typedef void (*LiSeamlessTableCallback)(uint8_t seq, uint8_t kind,
+                                        uint16_t canvasW, uint16_t canvasH,
                                         int16_t workAreaX, int16_t workAreaY,
                                         uint16_t workAreaW, uint16_t workAreaH,
                                         const LiSeamlessWindowEntry *entries, int count,

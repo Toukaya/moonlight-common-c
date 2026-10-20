@@ -290,7 +290,8 @@ static int handleTable(int isSnapshot, const uint8_t *payload, int length) {
             workAreaX, workAreaY, workAreaW, workAreaH);
 
     if (seamlessCallbacks.table != NULL) {
-        seamlessCallbacks.table(seq, canvasW, canvasH, workAreaX, workAreaY,
+        seamlessCallbacks.table(seq, isSnapshot ? SEAMLESS_TABLE_SNAPSHOT : SEAMLESS_TABLE_DELTA,
+                                canvasW, canvasH, workAreaX, workAreaY,
                                 workAreaW, workAreaH, entries, count,
                                 seamlessCallbackContext);
     }
