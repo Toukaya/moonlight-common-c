@@ -7,6 +7,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// The seamless window control channel definitions and entry points.
+#include "SeamlessStream.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -104,6 +107,10 @@ typedef struct _STREAM_CONFIGURATION {
 
     // Enables client-to-host microphone streaming when negotiated with the host.
     bool enableMic;
+
+    // Asks the host for the seamless window channel. The channel stays off
+    // unless the host answers the capability in its session description.
+    bool enableSeamless;
 } STREAM_CONFIGURATION, *PSTREAM_CONFIGURATION;
 
 // Use this function to zero the stream configuration when allocated on the stack or heap

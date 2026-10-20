@@ -1,4 +1,5 @@
 #include "Limelight-internal.h"
+#include "SeamlessStream.h"
 
 // This is a private header, but it just contains some time macros
 #include <enet/time.h>
@@ -143,6 +144,7 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_SET_CLIPBOARD 13
 #define IDX_FILE_TRANSFER_NONCE_REQUEST 14
 #define IDX_DS_ADAPTIVE_TRIGGERS 15
+#define IDX_SEAMLESS 16
 
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
@@ -236,6 +238,7 @@ static const short packetTypesGen7Enc[] = {
     0x3001, // Set Clipboard (Apollo protocol extension)
     0x3002, // File transfer nonce request (Apollo protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
+    SEAMLESS_PACKET_TYPE, // Seamless window messages, selected by channel id
 };
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
@@ -1284,6 +1287,16 @@ static void controlReceiveThreadFunc(void* context) {
 
             // All below codepaths must free ctlHdr!!!
 
+            // The seamless window messages are selected by their channel id
+            // and, for a payload that arrived on a shared channel, by the
+            // carrier type. Both ends accept either form.
+            if (event.channelID == SEAMLESS_CHANNEL_ID || ctlHdr->type == SEAMLESS_PACKET_TYPE) {
+                LiSeamlessHandleMessage((const uint8_t*)ctlHdr + sizeof(*ctlHdr),
+                                        packetLength - (int)sizeof(*ctlHdr));
+                free(ctlHdr);
+                continue;
+            }
+
             // Process HDR data immediately to update global HDR enabled state and HDR metadata.
             // The actual client callback will be invoked in the async callback thread.
             if (ctlHdr->type == packetTypes[IDX_HDR_INFO]) {
@@ -1717,6 +1730,22 @@ int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t chan
 
     // Send the input data (no reply expected)
     if (sendMessageAndForget(packetTypes[IDX_INPUT_DATA], length, data, channelId, flags, moreData) == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+// Sends one payload on an arbitrary control channel. Unsequenced, reliable:
+// a lost table version is recovered by the next one, but a lost intent or
+// acknowledgement must not be dropped by the transport.
+int sendControlMessageOnChannel(uint8_t channelId, const void* payload, int length) {
+    if (AppVersionQuad[0] < 5) {
+        return -1;
+    }
+
+    if (sendMessageAndForget(packetTypes[IDX_SEAMLESS], length, payload, channelId,
+                             ENET_PACKET_FLAG_RELIABLE, false) == 0) {
         return -1;
     }
 

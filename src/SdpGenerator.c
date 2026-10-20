@@ -270,6 +270,15 @@ static PSDP_OPTION getAttributesList(char*urlSafeAddr) {
     if (IS_SUNSHINE()) {
         // Send client feature flags to Sunshine hosts
         uint32_t moonlightFeatureFlags = ML_FF_FEC_STATUS | ML_FF_SESSION_ID_V1;
+
+        // The seamless window channel is offered only when the client asked
+        // for it. The host answers the capability in its own description, and
+        // the channel stays closed unless it does.
+        if (StreamConfig.enableSeamless) {
+            moonlightFeatureFlags |= SS_FF_SEAMLESS;
+            Limelog("Offering the seamless window channel\n");
+        }
+
         snprintf(payloadStr, sizeof(payloadStr), "%" PRIu32, moonlightFeatureFlags);
         err |= addAttributeString(&optionHead, "x-ml-general.featureFlags", payloadStr);
 
