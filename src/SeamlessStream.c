@@ -489,7 +489,7 @@ int LiEncodeWindowSnapshot(uint8_t *buffer, int capacity,
     uint32_t crc;
     int length;
 
-    if (buffer == NULL || entries == NULL) {
+    if (buffer == NULL || (entries == NULL && count > 0)) {
         return -1;
     }
     if (count < 0 || count > SEAMLESS_MAX_WINDOWS) {
