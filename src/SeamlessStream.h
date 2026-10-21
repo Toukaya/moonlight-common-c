@@ -149,6 +149,10 @@ extern "C" {
 #define SEAMLESS_INTENT_MAXIMIZE       2
 #define SEAMLESS_INTENT_RESTORE        3
 #define SEAMLESS_INTENT_STICKY         4
+// Kind 5 of the same message: close the window it names. A value of the existing
+// kind field, so the message layout is unchanged and an older host rejects it in
+// its validate-and-log path.
+#define SEAMLESS_INTENT_CLOSE          5
 
 // Window input modes.
 #define SEAMLESS_INPUT_FOCUS           0
