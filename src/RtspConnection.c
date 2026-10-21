@@ -1229,6 +1229,11 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
         if (!parseSdpAttributeToUInt(response.payload, "x-ss-general.encryptionRequested", &EncryptionFeaturesRequested)) {
             EncryptionFeaturesRequested = 0;
         }
+
+        // The seamless window channel opens only when the client asked for it
+        // and the host named it in its answer. The decision lives in one place
+        // so it can be exercised without a live session.
+        LiSeamlessEvaluateHostAnswer(StreamConfig.enableSeamless, response.payload);
         EncryptionFeaturesEnabled = 0;
 
         // Detect PCM mic: payload type 97 with x-ml-mic fmtp attributes.

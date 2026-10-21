@@ -1,4 +1,5 @@
 #include "Limelight-internal.h"
+#include "SeamlessStream.h"
 
 // This is a private header, but it just contains some time macros
 #include <enet/time.h>
@@ -144,6 +145,14 @@ static PPLT_CRYPTO_CONTEXT decryptionCtx;
 #define IDX_FILE_TRANSFER_NONCE_REQUEST 14
 #define IDX_DS_ADAPTIVE_TRIGGERS 15
 
+// The index space of the tables below. IDX_COUNT is the width every table must
+// have: a table shorter than the space turns a table read into an out-of-bounds
+// read, and the bytes after the table become a wire type. Adding an index means
+// raising IDX_MAX_USED, which then fails the per-table checks until every table
+// is extended. Every packetTypes table is checked below.
+#define IDX_MAX_USED IDX_DS_ADAPTIVE_TRIGGERS
+#define IDX_COUNT (IDX_MAX_USED + 1)
+
 #define CONTROL_STREAM_TIMEOUT_SEC 10
 #define CONTROL_STREAM_LINGER_TIMEOUT_SEC 2
 
@@ -237,6 +246,18 @@ static const short packetTypesGen7Enc[] = {
     0x3002, // File transfer nonce request (Apollo protocol extension)
     0x5503, // Set Adaptive Triggers (Sunshine protocol extension)
 };
+
+// Every packetTypes table holds exactly the index space. A short table would make a table
+// read run past the end, and the bytes after the table would become the wire
+// type: this is the class that a 17th entry in one table only produced. The
+// check is on every table, so a new index cannot be half-added.
+#define PACKET_TYPES_TABLE_WIDTH(name) ((int) (sizeof(name) / sizeof((name)[0])))
+typedef char packetTypesGen3Check[(PACKET_TYPES_TABLE_WIDTH(packetTypesGen3) == IDX_COUNT) ? 1 : -1];
+typedef char packetTypesGen4Check[(PACKET_TYPES_TABLE_WIDTH(packetTypesGen4) == IDX_COUNT) ? 1 : -1];
+typedef char packetTypesGen5Check[(PACKET_TYPES_TABLE_WIDTH(packetTypesGen5) == IDX_COUNT) ? 1 : -1];
+typedef char packetTypesGen7Check[(PACKET_TYPES_TABLE_WIDTH(packetTypesGen7) == IDX_COUNT) ? 1 : -1];
+typedef char packetTypesGen7EncCheck[(PACKET_TYPES_TABLE_WIDTH(packetTypesGen7Enc) == IDX_COUNT) ? 1 : -1];
+typedef char packetTypesIndexSpaceCheck[(IDX_COUNT == IDX_MAX_USED + 1) ? 1 : -1];
 
 static const char requestIdrFrameGen3[] = { 0, 0 };
 static const int startBGen3[] = { 0, 0, 0, 0xa };
@@ -1284,6 +1305,16 @@ static void controlReceiveThreadFunc(void* context) {
 
             // All below codepaths must free ctlHdr!!!
 
+            // The seamless window messages are selected by their channel id
+            // and, for a payload that arrived on a shared channel, by the
+            // carrier type. Both ends accept either form.
+            if (event.channelID == SEAMLESS_CHANNEL_ID || ctlHdr->type == SEAMLESS_PACKET_TYPE) {
+                LiSeamlessHandleMessage((const uint8_t*)ctlHdr + sizeof(*ctlHdr),
+                                        packetLength - (int)sizeof(*ctlHdr));
+                free(ctlHdr);
+                continue;
+            }
+
             // Process HDR data immediately to update global HDR enabled state and HDR metadata.
             // The actual client callback will be invoked in the async callback thread.
             if (ctlHdr->type == packetTypes[IDX_HDR_INFO]) {
@@ -1717,6 +1748,26 @@ int sendInputPacketOnControlStream(unsigned char* data, int length, uint8_t chan
 
     // Send the input data (no reply expected)
     if (sendMessageAndForget(packetTypes[IDX_INPUT_DATA], length, data, channelId, flags, moreData) == 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+// Sends one payload on an arbitrary control channel. Unsequenced, reliable:
+// a lost table version is recovered by the next one, but a lost intent or
+// acknowledgement must not be dropped by the transport.
+int sendControlMessageOnChannel(uint8_t channelId, const void* payload, int length) {
+    if (AppVersionQuad[0] < 5) {
+        return -1;
+    }
+
+    // The carrier type is a constant, not a per-generation table entry: the
+    // channel only exists between a client and a host that both answer the
+    // capability, and that host speaks one type. Reading it from the tables is
+    // what put a 17th slot into a 16-slot table.
+    if (sendMessageAndForget(SEAMLESS_PACKET_TYPE, length, payload, channelId,
+                             ENET_PACKET_FLAG_RELIABLE, false) == 0) {
         return -1;
     }
 
